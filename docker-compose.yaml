@@ -1,0 +1,52 @@
+services:
+  enshrouded:
+    image: ${ENSHROUDED_IMAGE:-ghcr.io/shipstuff/enshrouded-server:latest}
+    # Uncomment to force local builds instead of pulling the published tag first.
+    # pull_policy: build
+    build:
+      context: ./image
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      SERVER_NAME: ${SERVER_NAME:-Enshrouded Server}
+      SAVE_IMPORT_MODE: ${SAVE_IMPORT_MODE:-0}
+      SAVE_IMPORT_PORT: ${SAVE_IMPORT_PORT:-8080}
+      SAVE_IMPORT_BIND: ${SAVE_IMPORT_BIND:-127.0.0.1}
+      SAVE_IMPORT_TIMEOUT_SECONDS: ${SAVE_IMPORT_TIMEOUT_SECONDS:-0}
+    ports:
+      - "15636:15636/udp"
+      - "15637:15637/udp"
+      - "27015:27015/udp"
+      # Needed only when SAVE_IMPORT_MODE=1 (startup upload UI).
+      - "8080:8080/tcp"
+    volumes:
+      # mount the entire home folder so startup only need to verify the version and not redownload everything on each startup
+      - enshrouded-data:/home/steam
+  stats-api:
+    image: ${ENSHROUDED_STATS_API_IMAGE:-ghcr.io/shipstuff/enshrouded-live-stats-api:latest}
+    # Uncomment to force local builds instead of pulling the published tag first.
+    # pull_policy: build
+    build:
+      context: .
+      dockerfile: ./tools/services/api/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      - enshrouded
+    environment:
+      ENSHROUDED_API_BIND: "0.0.0.0"
+      ENSHROUDED_API_PORT: "8091"
+      ENSHROUDED_API_HOST: "enshrouded"
+      ENSHROUDED_API_TIMEOUT: "1.0"
+      ENSHROUDED_API_RETRIES: "2"
+      ENSHROUDED_API_CACHE_TTL: "3.0"
+      ENSHROUDED_API_GAME_PORT_1: "15636"
+      ENSHROUDED_API_GAME_PORT_2: "15637"
+      ENSHROUDED_API_STEAM_QUERY_PORT: "27015"
+      ENSHROUDED_API_SERVER_CONFIG_PATH: "/home/steam/enshrouded/enshrouded_server.json"
+    ports:
+      - "8091:8091/tcp"
+    volumes:
+      - enshrouded-data:/home/steam:ro
+
+volumes:
+  enshrouded-data:

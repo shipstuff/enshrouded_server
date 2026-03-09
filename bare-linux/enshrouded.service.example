@@ -1,0 +1,23 @@
+[Unit]
+Description=Enshrouded Dedicated Server (bare Linux)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=REPLACE_WITH_USER
+Group=REPLACE_WITH_USER
+WorkingDirectory=/opt/enshrouded/image
+EnvironmentFile=-/etc/enshrouded/enshrouded.env
+Environment=SAVE_IMPORT_MODE=0
+Environment=SAVE_IMPORT_PORT=8080
+Environment=SAVE_IMPORT_BIND=127.0.0.1
+Environment=SAVE_IMPORT_TIMEOUT_SECONDS=0
+ExecStart=/opt/enshrouded/image/entrypoint.sh
+KillMode=process
+TimeoutStopSec=90
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

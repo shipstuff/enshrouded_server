@@ -1,0 +1,10 @@
+.git
+.github
+**/__pycache__/
+**/*.py[cod]
+.env
+.env.*
+*.log
+*.pid
+*.swp
+PERF_BASELINE.md

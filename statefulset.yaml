@@ -1,0 +1,122 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: enshrouded
+  namespace: games
+  labels:
+    app: enshrouded
+spec:
+  serviceName: enshrouded
+  replicas: 1
+  selector:
+    matchLabels:
+      app: enshrouded
+  template:
+    metadata:
+      labels:
+        app: enshrouded
+    spec:
+      terminationGracePeriodSeconds: 90
+      securityContext:
+        runAsUser: 10000
+        runAsGroup: 10000
+        fsGroup: 10000
+      containers:
+        - name: enshrouded
+          image: ghcr.io/shipstuff/enshrouded-server:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: SAVE_IMPORT_MODE
+              value: "0"
+            - name: SAVE_IMPORT_PORT
+              value: "8080"
+            - name: SAVE_IMPORT_BIND
+              value: "127.0.0.1"
+            - name: SERVER_NAME
+              value: "Enshrouded Server"
+            - name: SAVE_IMPORT_TIMEOUT_SECONDS
+              value: "0"
+          ports:
+            - containerPort: 15636
+              name: game-udp-1
+              protocol: UDP
+            - containerPort: 15637
+              name: game-udp-2
+              protocol: UDP
+            - containerPort: 27015
+              name: query-udp
+              protocol: UDP
+          resources:
+            requests:
+              cpu: "2000m"
+              memory: "2Gi"
+            limits:
+              # no CPU limit so it can burst to node capacity, let linux scheudler handle it
+              # only set limit if you REALLY need to since it generally hurts perf
+              memory: "12Gi"
+          volumeMounts:
+            - name: data
+              # mount the entire home folder so startup only need to verify the version and not redownload everything
+              mountPath: /home/steam
+              subPath: steam-root
+        - name: enshrouded-stats-api
+          image: ghcr.io/shipstuff/enshrouded-live-stats-api:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: ENSHROUDED_API_BIND
+              value: "0.0.0.0"
+            - name: ENSHROUDED_API_PORT
+              value: "8091"
+            - name: ENSHROUDED_API_HOST
+              value: "127.0.0.1"
+            - name: ENSHROUDED_API_TIMEOUT
+              value: "1.0"
+            - name: ENSHROUDED_API_RETRIES
+              value: "2"
+            - name: ENSHROUDED_API_CACHE_TTL
+              value: "3.0"
+            - name: ENSHROUDED_API_GAME_PORT_1
+              value: "15636"
+            - name: ENSHROUDED_API_GAME_PORT_2
+              value: "15637"
+            - name: ENSHROUDED_API_STEAM_QUERY_PORT
+              value: "27015"
+            - name: ENSHROUDED_API_SERVER_CONFIG_PATH
+              value: "/home/steam/enshrouded/enshrouded_server.json"
+            - name: ENSHROUDED_API_DISCORD_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: enshrouded-api-webhooks
+                  key: discord-webhook-url
+                  optional: true
+          ports:
+            - containerPort: 8091
+              name: stats-api
+              protocol: TCP
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: stats-api
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: stats-api
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "32Mi"
+            limits:
+              memory: "64Mi"
+          volumeMounts:
+            - name: data
+              mountPath: /home/steam
+              subPath: steam-root
+              readOnly: true
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: enshrouded-data

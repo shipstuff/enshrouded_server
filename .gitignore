@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
+.DS_Store
+*.log
+*.pid
+*.swp
+.pytest_cache/
+enshrouded-data/
+steamcmd/

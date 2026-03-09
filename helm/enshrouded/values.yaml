@@ -1,0 +1,175 @@
+imagePullSecrets: []
+
+namespace: games
+createNamespace: true
+
+replicaCount: 1
+terminationGracePeriodSeconds: 90
+
+image:
+  repository: ghcr.io/shipstuff/enshrouded-server
+  # Pin this in production for reproducible installs.
+  tag: latest
+  pullPolicy: IfNotPresent
+
+statsApi:
+  enabled: true
+  image:
+    repository: ghcr.io/shipstuff/enshrouded-live-stats-api
+    tag: latest
+    pullPolicy: IfNotPresent
+  port: 8091
+  bind: 0.0.0.0
+  targetHost: 127.0.0.1
+  timeoutSeconds: 1.0
+  retries: 2
+  cacheTtlSeconds: 3.0
+  exposeLocalStats: false
+  lanePorts:
+    gamePort1: 15636
+    gamePort2: 15637
+    steamQuery: 27015
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      memory: 64Mi
+  # Use this for secret-backed env injection, for example:
+  # extraEnv:
+  #   - name: ENSHROUDED_API_DISCORD_WEBHOOK_URL
+  #     valueFrom:
+  #       secretKeyRef:
+  #         name: enshrouded-api-webhooks
+  #         key: discord-webhook-url
+  extraEnv: []
+
+persistence:
+  existingClaim: ""
+  size: 50Gi
+  accessMode: ReadWriteOnce
+  storageClassName: ""
+  subPath: steam-root
+
+service:
+  type: NodePort
+  gamePort1: 15636
+  gameNodePort1: 32636
+  gamePort2: 15637
+  gameNodePort2: 32637
+  queryPort: 27015
+  queryNodePort: 32015
+  statsApi:
+    enabled: true
+    port: 8091
+    nodePort: 32091
+  saveImport:
+    enabled: false
+    port: 8080
+    # Exposes temporary startup upload UI on node TCP (if service is disabled, you will need to use pod port-forward).
+    nodePort: 32080
+
+saveImport:
+  mode: "0"
+  port: "8080"
+  # Default localhost-only; set 0.0.0.0 when exposing via service.saveImport NodePort.
+  bind: "127.0.0.1"
+  timeoutSeconds: "0"
+
+serverConfig:
+  # managed: render the checked-in config template on every start and merge passwords from a Secret
+  # mutable: require an existing config file on the PVC and leave it untouched
+  mode: managed
+  path: /home/steam/enshrouded/enshrouded_server.json
+  passwordSecret:
+    name: ""
+    key: user-group-passwords.json
+    # Expected JSON payload shape in the secret key:
+    # {"Default":"super-secret-password"}
+  inlineJson:
+    name: Enshrouded Server
+    saveDirectory: ./savegame
+    logDirectory: ./logs
+    ip: 0.0.0.0
+    queryPort: 15637
+    slotCount: 16
+    tags: []
+    voiceChatMode: Proximity
+    enableVoiceChat: false
+    enableTextChat: true
+    gameSettingsPreset: Default
+    gameSettings:
+      playerHealthFactor: 1
+      playerManaFactor: 1
+      playerStaminaFactor: 1
+      playerBodyHeatFactor: 1
+      playerDivingTimeFactor: 1
+      enableDurability: true
+      enableStarvingDebuff: false
+      foodBuffDurationFactor: 1
+      fromHungerToStarving: 600000000000
+      shroudTimeFactor: 1
+      tombstoneMode: AddBackpackMaterials
+      enableGliderTurbulences: true
+      weatherFrequency: Normal
+      fishingDifficulty: Normal
+      miningDamageFactor: 1
+      plantGrowthSpeedFactor: 1
+      resourceDropStackAmountFactor: 1
+      factoryProductionSpeedFactor: 1
+      perkUpgradeRecyclingFactor: 0.5
+      perkCostFactor: 1
+      experienceCombatFactor: 1
+      experienceMiningFactor: 1
+      experienceExplorationQuestsFactor: 1
+      randomSpawnerAmount: Normal
+      aggroPoolAmount: Normal
+      enemyDamageFactor: 1
+      enemyHealthFactor: 1
+      enemyStaminaFactor: 1
+      enemyPerceptionRangeFactor: 1
+      bossDamageFactor: 1
+      bossHealthFactor: 1
+      threatBonus: 1
+      pacifyAllEnemies: false
+      tamingStartleRepercussion: LoseSomeProgress
+      dayTimeDuration: 1800000000000
+      nightTimeDuration: 720000000000
+      curseModifier: Normal
+    userGroups:
+      - name: Default
+        password: "anything here will be ignored, pls create a secret"
+        canKickBan: true
+        canAccessInventories: true
+        canEditWorld: true
+        canEditBase: true
+        canExtendBase: true
+        reservedSlots: 0
+    bannedAccounts: []
+
+resources:
+  # Minimum recommended resources for a server with 4 slots
+  requests:
+    cpu: 2000m # 2 cores
+    memory: 2Gi # 2GB RAM
+  limits:
+    memory: 4Gi # 4GB RAM
+  # No CPU limit so it can burst to node capacity, let linux scheduler handle it
+  # Only set limit if you REALLY need to since it generally hurts perf
+
+
+securityContext:
+  runAsUser: 10000
+  runAsGroup: 10000
+  fsGroup: 10000
+
+containerSecurityContext:
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
+
+nodeSelector: {}
+ 

@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  replay-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Run replay tests
+        run: |
+          bash ./tools/tests/replay/test_query_probe.sh
+          bash ./tools/tests/replay/test_lane_probe_snapshot.sh
+          bash ./tools/tests/replay/test_live_stats_api.sh
+          python3 ./tools/tests/replay/test_query_steam_a2s.py ./tools
+
+  helm-template:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+
+      - name: Render chart
+        run: helm template enshrouded ./helm/enshrouded >/dev/null

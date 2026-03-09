@@ -1,0 +1,6 @@
+apiVersion: v2
+name: enshrouded
+description: Enshrouded dedicated server with optional startup-time save import UI
+type: application
+version: 0.1.0
+appVersion: "latest"

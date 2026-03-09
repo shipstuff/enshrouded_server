@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Enshrouded Status</title>
+  <style>
+    :root { color-scheme: light; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      background: #0f172a;
+      color: #e2e8f0;
+    }
+    .wrap {
+      max-width: 860px;
+      margin: 32px auto;
+      padding: 0 16px;
+    }
+    .card {
+      background: #111827;
+      border: 1px solid #1f2937;
+      border-radius: 10px;
+      padding: 16px;
+      margin-bottom: 14px;
+    }
+    h1, h2 {
+      margin: 0 0 10px;
+    }
+    .ok { color: #22c55e; }
+    .bad { color: #f97316; }
+    .muted { color: #94a3b8; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 8px;
+    }
+    td, th {
+      padding: 8px 10px;
+      border-bottom: 1px solid #1f2937;
+      text-align: left;
+      font-size: 14px;
+    }
+    code {
+      color: #93c5fd;
+    }
+    pre {
+      margin: 0;
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Enshrouded Status</h1>
+    <p class="muted">Live view from <code>/v1/stats</code>. Auto-refresh every 3s.</p>
+
+    <div class="card">
+      <h2>Live</h2>
+      <div id="live">Loading...</div>
+    </div>
+
+    <div class="card">
+      <h2>Lanes</h2>
+      <table id="lanes">
+        <thead>
+          <tr><th>Lane</th><th>Target</th><th>Status</th><th>Players</th><th>A2S Player</th><th>Rules</th><th>Error</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="card" id="local-stats-card" hidden>
+      <h2>Local API Host</h2>
+      <p class="muted">Optional CPU and memory stats from the machine running this API.</p>
+      <div id="local-stats">-</div>
+    </div>
+
+    <div class="card" id="startup-config-card" hidden>
+      <h2>Startup Config</h2>
+      <p class="muted">Redacted startup config for the Enshrouded server and the stats API.</p>
+      <h3>Server</h3>
+      <pre id="startup-config-server">-</pre>
+      <h3 style="margin-top: 16px;">Stats API</h3>
+      <pre id="startup-config-api">-</pre>
+    </div>
+  </div>
+  <script>
+    const liveEl = document.getElementById("live");
+    const lanesBody = document.querySelector("#lanes tbody");
+    const localStatsCard = document.getElementById("local-stats-card");
+    const localStatsEl = document.getElementById("local-stats");
+    const startupConfigCard = document.getElementById("startup-config-card");
+    const startupConfigServerEl = document.getElementById("startup-config-server");
+    const startupConfigApiEl = document.getElementById("startup-config-api");
+
+    function statusClass(ok) { return ok ? "ok" : "bad"; }
+    function text(v) {
+      if (v === null || v === undefined || v === "") return "-";
+      const el = document.createElement("span");
+      el.textContent = String(v);
+      return el.innerHTML;
+    }
+    function pct(v) { return v === null || v === undefined ? "-" : `${v}%`; }
+
+    function render(data) {
+      const live = data.live || {};
+      liveEl.innerHTML = `
+        <div><strong>Status:</strong> <span class="${live.status === "online" ? "ok" : "bad"}">${text(live.status)}</span></div>
+        <div><strong>Source Lane:</strong> ${text(live.source_lane)}</div>
+        <div><strong>Players:</strong> ${text(live.players_current)} / ${text(live.players_max)}</div>
+        <div><strong>Server:</strong> ${text(live.server_name)} (${text(live.server_version)})</div>
+        <div><strong>Latency:</strong> ${text(live.latency_ms)} ms</div>
+        <div><strong>A2S Player Entries:</strong> ${text(live.a2s_player_count)}</div>
+        <div><strong>A2S Rules:</strong> ${text(live.a2s_rule_count)}</div>
+        <div class="muted"><strong>Snapshot:</strong> ${text(data.ts)}</div>
+      `;
+
+      lanesBody.innerHTML = "";
+      for (const lane of (data.lanes || [])) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${text(lane.lane)}</td>
+          <td><code>${text(lane.target)}</code></td>
+          <td><span class="${statusClass(!!lane.ok)}">${lane.ok ? "ok" : "fail"}</span></td>
+          <td>${text(lane.players_current)} / ${text(lane.players_max)}</td>
+          <td>${text(lane.player_count)}</td>
+          <td>${text(lane.rule_count)}</td>
+          <td class="muted">${text(lane.error)}</td>
+        `;
+        lanesBody.appendChild(tr);
+      }
+
+      const localStats = data.local_stats;
+      if (localStats) {
+        localStatsCard.hidden = false;
+        localStatsEl.innerHTML = `
+          <div><strong>Scope:</strong> ${text(localStats.scope)}</div>
+          <div><strong>CPU:</strong> ${pct(localStats.cpu_percent)}</div>
+          <div><strong>Memory:</strong> ${pct(localStats.memory_percent)} (${text(localStats.memory_used_mb)} / ${text(localStats.memory_total_mb)} MB)</div>
+          <div><strong>Load:</strong> ${text(localStats.loadavg_1m)} / ${text(localStats.loadavg_5m)} / ${text(localStats.loadavg_15m)}</div>
+          <div class="muted"><strong>Error:</strong> ${text(localStats.error)}</div>
+        `;
+      } else {
+        localStatsCard.hidden = true;
+      }
+
+      const startupConfig = data.startup_config;
+      if (startupConfig) {
+        startupConfigCard.hidden = false;
+        startupConfigServerEl.textContent = JSON.stringify(startupConfig.server || {}, null, 2);
+        startupConfigApiEl.textContent = JSON.stringify(startupConfig.stats_api || {}, null, 2);
+      } else {
+        startupConfigCard.hidden = true;
+      }
+    }
+
+    async function tick() {
+      try {
+        const res = await fetch("/v1/stats", { cache: "no-store" });
+        const data = await res.json();
+        render(data);
+      } catch (err) {
+        liveEl.innerHTML = `<span class="bad">Failed to load stats: ${err}</span>`;
+      }
+    }
+
+    tick();
+    setInterval(tick, 3000);
+  </script>
+</body>
+</html>

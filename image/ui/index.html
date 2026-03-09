@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Enshrouded Save Import</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 2rem; max-width: 56rem; }
+      .card { border: 1px solid #ccc; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+      button { padding: 0.6rem 0.9rem; margin-right: 0.5rem; cursor: pointer; }
+      #status { white-space: pre-wrap; background: #f4f4f4; padding: 0.8rem; border-radius: 6px; min-height: 3rem; }
+      table { width: 100%; border-collapse: collapse; margin-top: 0.8rem; }
+      th, td { border: 1px solid #ddd; padding: 0.4rem; text-align: left; }
+      th { background: #f7f7f7; }
+      .row { margin-top: 0.6rem; }
+      .muted { color: #555; }
+    </style>
+  </head>
+  <body>
+    <h1>Enshrouded Save Import</h1>
+    <div class="card">
+      <p>Upload one world zip with exactly 4 files:</p>
+      <ul>
+        <li><code>&lt;slotid&gt;</code> or <code>&lt;slotid&gt;-N</code></li>
+        <li><code>&lt;slotid&gt;_info</code> or <code>&lt;slotid&gt;_info-N</code></li>
+        <li><code>&lt;slotid&gt;-index</code></li>
+        <li><code>&lt;slotid&gt;_info-index</code></li>
+      </ul>
+      <div class="row">
+        <input id="zipFile" type="file" accept=".zip,application/zip">
+      </div>
+      <div class="row">
+        <label for="targetMode"><strong>Target slot:</strong></label>
+        <select id="targetMode">
+          <option value="auto">Auto (first free slot)</option>
+          <option value="source">Preserve uploaded slot</option>
+          <option value="specific">Specific slot</option>
+        </select>
+        <select id="targetSlot" disabled></select>
+      </div>
+      <div class="row">
+        <button id="uploadBtn">Upload and Start Server</button>
+        <button id="skipBtn" type="button">Skip and Start Server</button>
+        <button id="updateBtn" type="button">Update and Start Server</button>
+        <button id="downloadBtn" type="button">Download Current Saves (.zip)</button>
+        <button id="refreshBtn" type="button">Refresh Slot Status</button>
+      </div>
+      <div class="row muted">
+        Overwrite/remap warnings require explicit confirmation.
+      </div>
+    </div>
+
+    <div class="card">
+      <strong>Current Saves (1-10)</strong>
+      <table>
+        <thead>
+          <tr><th>Slot</th><th>Slot ID</th><th>Occupied</th><th>Files</th><th>Latest</th><th>Updated</th><th>Info Latest</th><th>Info Updated</th></tr>
+        </thead>
+        <tbody id="slotTableBody"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <strong>Status</strong>
+      <div id="status">Waiting for action.</div>
+    </div>
+
+    <script>
+      const statusEl = document.getElementById("status");
+      const uploadBtn = document.getElementById("uploadBtn");
+      const skipBtn = document.getElementById("skipBtn");
+      const updateBtn = document.getElementById("updateBtn");
+      const downloadBtn = document.getElementById("downloadBtn");
+      const refreshBtn = document.getElementById("refreshBtn");
+      const zipInput = document.getElementById("zipFile");
+      const targetMode = document.getElementById("targetMode");
+      const targetSlot = document.getElementById("targetSlot");
+      const slotTableBody = document.getElementById("slotTableBody");
+
+      function setStatus(message) {
+        statusEl.textContent = message;
+      }
+
+      function qs(params) {
+        const entries = Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== "");
+        if (!entries.length) return "";
+        return "?" + entries.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
+      }
+
+      function renderSlots(data) {
+        slotTableBody.innerHTML = "";
+        for (const s of data.slots) {
+          const tr = document.createElement("tr");
+          const tdSlot = document.createElement("td");
+          tdSlot.textContent = String(s.slot);
+
+          const tdSlotId = document.createElement("td");
+          const code = document.createElement("code");
+          code.textContent = String(s.slotId);
+          tdSlotId.appendChild(code);
+
+          const tdOccupied = document.createElement("td");
+          tdOccupied.textContent = s.occupied ? "Yes" : "No";
+
+          const tdCount = document.createElement("td");
+          tdCount.textContent = String(s.fileCount);
+
+          const tdLatest = document.createElement("td");
+          tdLatest.textContent = s.latest === null ? "-" : String(s.latest);
+
+          const tdUpdated = document.createElement("td");
+          tdUpdated.textContent = formatEpoch(s.updatedAt);
+
+          const tdInfoLatest = document.createElement("td");
+          tdInfoLatest.textContent = s.infoLatest === null ? "-" : String(s.infoLatest);
+
+          const tdInfoUpdated = document.createElement("td");
+          tdInfoUpdated.textContent = formatEpoch(s.infoUpdatedAt);
+
+          tr.appendChild(tdSlot);
+          tr.appendChild(tdSlotId);
+          tr.appendChild(tdOccupied);
+          tr.appendChild(tdCount);
+          tr.appendChild(tdLatest);
+          tr.appendChild(tdUpdated);
+          tr.appendChild(tdInfoLatest);
+          tr.appendChild(tdInfoUpdated);
+          slotTableBody.appendChild(tr);
+        }
+      }
+
+      function formatEpoch(value) {
+        if (value === null || value === undefined || value === "" || Number.isNaN(Number(value))) {
+          return "-";
+        }
+        const ms = Number(value) * 1000;
+        try {
+          return new Date(ms).toLocaleString();
+        } catch {
+          return String(value);
+        }
+      }
+
+      function ensureSlotOptions() {
+        if (targetSlot.options.length) return;
+        for (let i = 1; i <= 10; i++) {
+          const opt = document.createElement("option");
+          opt.value = String(i);
+          opt.textContent = `Save ${i}`;
+          targetSlot.appendChild(opt);
+        }
+      }
+
+      async function loadStatus() {
+        try {
+          const res = await fetch("/cgi-bin/status.sh", { cache: "no-store" });
+          if (!res.ok) throw new Error(`status fetch failed (${res.status})`);
+          const data = await res.json();
+          renderSlots(data);
+          setStatus(`Loaded status: ${data.occupiedCount}/${data.slotCount} slots occupied.`);
+        } catch (err) {
+          setStatus("Failed to load slot status: " + err);
+        }
+      }
+
+      async function submitUpload(confirmed) {
+        const file = zipInput.files[0];
+        if (!file) {
+          setStatus("Select a .zip file first.");
+          return;
+        }
+
+        const params = {};
+        params.target_mode = targetMode.value;
+        if (targetMode.value === "specific") {
+          params.target_slot = targetSlot.value;
+        }
+        if (confirmed) {
+          params.confirm_overwrite = "1";
+        }
+
+        setStatus("Uploading...");
+        try {
+          const res = await fetch("/cgi-bin/upload.sh" + qs(params), {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/zip",
+              "X-Filename": file.name
+            },
+            body: file
+          });
+          const text = await res.text();
+
+          if (res.status === 409 && !confirmed) {
+            setStatus("Confirmation required:\n" + text);
+            if (window.confirm(text + "\n\nProceed with this upload?")) {
+              await submitUpload(true);
+            }
+            return;
+          }
+
+          if (!res.ok) {
+            setStatus("Upload failed:\n" + text);
+            return;
+          }
+
+          setStatus(text + "\nServer startup will now continue.");
+          await loadStatus();
+        } catch (err) {
+          setStatus("Upload error: " + err);
+        }
+      }
+
+      uploadBtn.addEventListener("click", async () => {
+        await submitUpload(false);
+      });
+
+      skipBtn.addEventListener("click", async () => {
+        setStatus("Skipping import...");
+        try {
+          const res = await fetch("/cgi-bin/skip.sh", { method: "POST" });
+          const text = await res.text();
+          if (!res.ok) {
+            setStatus("Skip failed:\n" + text);
+            return;
+          }
+          setStatus(text + "\nServer startup will now continue.");
+        } catch (err) {
+          setStatus("Skip error: " + err);
+        }
+      });
+
+      updateBtn.addEventListener("click", async () => {
+        setStatus("Requesting update...");
+        try {
+          const res = await fetch("/cgi-bin/update.sh", { method: "POST" });
+          const text = await res.text();
+          if (!res.ok) {
+            setStatus("Update request failed:\n" + text);
+            return;
+          }
+          setStatus(text + "\nServer startup will now continue.");
+        } catch (err) {
+          setStatus("Update request error: " + err);
+        }
+      });
+
+      downloadBtn.addEventListener("click", () => {
+        setStatus("Preparing save export download...");
+        window.location.href = "/cgi-bin/download.sh";
+      });
+
+      refreshBtn.addEventListener("click", loadStatus);
+
+      targetMode.addEventListener("change", () => {
+        targetSlot.disabled = targetMode.value !== "specific";
+      });
+
+      ensureSlotOptions();
+      loadStatus();
+    </script>
+  </body>
+</html>
