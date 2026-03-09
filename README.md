@@ -1,4 +1,4 @@
-# Enshrouded Self-Hosted Server Infra
+# How To Install An Enshrouded Self-Hosted Server
 
 Open-source deployment bundle for running an Enshrouded self-hosted server or Enshrouded dedicated server on a spare PC, with Docker, or on Kubernetes.
 
@@ -17,28 +17,26 @@ Use this repo if you want to:
 - host an Enshrouded server on a spare Linux machine without containers
 - expose simple live metrics and Discord webhook notifications for an Enshrouded server
 
-## Published Images
+## Choose An Install Path
 
-Default public images:
+If you are here to install an Enshrouded server, start with one of these:
+
+- [Install With Docker Compose](#install-with-docker-compose)
+- [Install On Kubernetes With Plain Manifests Or Kustomize](#install-on-kubernetes-with-plain-manifests-or-kustomize)
+- [Install On Kubernetes With Helm](#install-on-kubernetes-with-helm)
+- [Install On Bare Linux With systemd](#install-on-bare-linux-with-systemd)
+
+## Published Images And Helm Chart
+
 - `ghcr.io/shipstuff/enshrouded-server`
 - `ghcr.io/shipstuff/enshrouded-live-stats-api`
 
 Published public Helm chart:
 - `oci://ghcr.io/shipstuff/charts/enshrouded`
 
-GitHub Actions publishes to GHCR on pushes to `main` and version tags like `v1.2.3`.
-The same workflow can also publish to Docker Hub when these repository secrets are set:
-- `DOCKERHUB_USERNAME`
-- `DOCKERHUB_TOKEN`
-
-Optional repository variable:
-- `DOCKERHUB_NAMESPACE`
-
-If you do not set Docker Hub credentials, only GHCR is used.
-
 The Helm chart is validated on pull requests and `main`, and published to GHCR as an OCI chart on version tags like `v0.1.0`. The git tag must match [`Chart.yaml`](/home/seslly/seslly-github/servertimeai/k8s/enshrouded_server/helm/enshrouded/Chart.yaml#L1) `version`.
 
-## Docker Compose
+## Install With Docker Compose
 
 Use the published images:
 
@@ -76,7 +74,7 @@ Default exposed ports:
 - TCP `8091` for the stats API
 - TCP `8080` only matters when `SAVE_IMPORT_MODE=1`
 
-## Plain Kubernetes
+## Install On Kubernetes With Plain Manifests Or Kustomize
 
 Apply the included manifests:
 
@@ -101,7 +99,7 @@ kubectl -n games set image statefulset/enshrouded \
   enshrouded-stats-api=ghcr.io/your-org/enshrouded-live-stats-api:latest
 ```
 
-## Helm
+## Install On Kubernetes With Helm
 
 Install with the public defaults:
 
@@ -179,7 +177,7 @@ helm upgrade --install enshrouded ./helm/enshrouded \
   --set saveImport.bind=0.0.0.0
 ```
 
-## Bare Linux
+## Install On Bare Linux With systemd
 
 Install as your current user with rootless `systemd --user`:
 
@@ -189,7 +187,7 @@ Install as your current user with rootless `systemd --user`:
 
 Details and installer-only env vars are documented in [`bare-linux/README.md`](/home/seslly/seslly-github/servertimeai/k8s/enshrouded_server/bare-linux/README.md).
 
-## Runtime Configuration
+## Configure Server Runtime
 
 The server config lives at `$ENSHROUDED_PATH/enshrouded_server.json`.
 In `env` mode, if the file does not exist, the image copies [`image/enshrouded_server_example.json`](/home/seslly/seslly-github/servertimeai/k8s/enshrouded_server/image/enshrouded_server_example.json) and applies env overrides on each start.
@@ -217,7 +215,7 @@ Common env overrides:
 When `EXTERNAL_CONFIG=1` or `ENSHROUDED_CONFIG_MODE=mutable`, you must provide your own `enshrouded_server.json` at `ENSHROUDED_CONFIG`.
 When `ENSHROUDED_CONFIG_MODE=managed`, set `ENSHROUDED_MANAGED_CONFIG_TEMPLATE` to a full JSON template and optionally `ENSHROUDED_MANAGED_CONFIG_PASSWORDS` to a secret-backed JSON map like `{"Default":"replace-me"}`.
 
-## Stats API
+## Use The Optional Stats API And Landing Page
 
 The optional API exposes:
 - `/healthz`
@@ -241,7 +239,7 @@ python3 ./tools/services/api/live_stats_api.py \
 
 More examples live in [`tools/USAGE.md`](/home/seslly/seslly-github/servertimeai/k8s/enshrouded_server/tools/USAGE.md).
 
-## Save Import UI
+## Use The Optional Save Import UI
 
 The temporary upload/download UI is disabled by default.
 Enable it for a single boot by setting `SAVE_IMPORT_MODE=1`.
@@ -251,7 +249,7 @@ Safer default:
 
 Only switch `SAVE_IMPORT_BIND` to `0.0.0.0` if you intentionally want to expose the UI over the network.
 
-## Validation
+## Validate Local Changes
 
 Replay checks:
 
