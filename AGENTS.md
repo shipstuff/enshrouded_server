@@ -58,7 +58,7 @@ The stats API is intentionally simple:
 Current behavior to understand before editing:
 
 - `ENSHROUDED_API_HOST` is the UDP probe target.
-- In Kubernetes the sidecar currently probes `127.0.0.1`, so that same value appears in API payloads and webhook messages unless the code is changed to separate probe target from display identity.
+- In Kubernetes the sidecar currently probes `127.0.0.1`, so that same value appears in API payloads and webhook messages.
 - The landing page under `tools/services/api/static/index.html` is a read-only status view; it depends on the JSON shape from `/v1/stats`.
 
 If you change API payload fields, update:

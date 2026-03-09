@@ -63,6 +63,12 @@
       <div id="live">Loading...</div>
     </div>
 
+    <div class="card" id="server-config-card" hidden>
+      <h2>Server Config</h2>
+      <p class="muted">Always-on summary loaded from <code>enshrouded_server.json</code>.</p>
+      <div id="server-config">-</div>
+    </div>
+
     <div class="card">
       <h2>Lanes</h2>
       <table id="lanes">
@@ -81,7 +87,7 @@
 
     <div class="card" id="startup-config-card" hidden>
       <h2>Startup Config</h2>
-      <p class="muted">Redacted startup config for the Enshrouded server and the stats API.</p>
+      <p class="muted">Debug-only redacted startup config for the Enshrouded server and the stats API.</p>
       <h3>Server</h3>
       <pre id="startup-config-server">-</pre>
       <h3 style="margin-top: 16px;">Stats API</h3>
@@ -90,6 +96,8 @@
   </div>
   <script>
     const liveEl = document.getElementById("live");
+    const serverConfigCard = document.getElementById("server-config-card");
+    const serverConfigEl = document.getElementById("server-config");
     const lanesBody = document.querySelector("#lanes tbody");
     const localStatsCard = document.getElementById("local-stats-card");
     const localStatsEl = document.getElementById("local-stats");
@@ -118,6 +126,23 @@
         <div><strong>A2S Rules:</strong> ${text(live.a2s_rule_count)}</div>
         <div class="muted"><strong>Snapshot:</strong> ${text(data.ts)}</div>
       `;
+
+      const serverConfig = data.server_config;
+      if (serverConfig) {
+        serverConfigCard.hidden = false;
+        serverConfigEl.innerHTML = `
+          <div><strong>Config Path:</strong> <code>${text(serverConfig.config_path)}</code></div>
+          <div><strong>Loaded:</strong> ${text(serverConfig.loaded)}</div>
+          <div><strong>Name:</strong> ${text(serverConfig.name)}</div>
+          <div><strong>IP:</strong> ${text(serverConfig.ip)}</div>
+          <div><strong>Query Port:</strong> ${text(serverConfig.query_port)}</div>
+          <div><strong>Slots:</strong> ${text(serverConfig.slot_count)}</div>
+          <div><strong>User Groups:</strong> ${text(serverConfig.user_group_count)}</div>
+          <div class="muted"><strong>Error:</strong> ${text(serverConfig.error)}</div>
+        `;
+      } else {
+        serverConfigCard.hidden = true;
+      }
 
       lanesBody.innerHTML = "";
       for (const lane of (data.lanes || [])) {

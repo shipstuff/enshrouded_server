@@ -44,8 +44,7 @@ If you are probing a Kubernetes NodePort instead, pass the node address and Node
 ```bash
 python3 ./tools/probes/lane_probe_snapshot.py \
   --host 127.0.0.1 \
-  --game-port-1 15636 \
-  --game-port-2 15637 \
+  --game-port 15637 \
   --steam-query-port 27015 \
   --summary
 ```
@@ -55,7 +54,7 @@ Offline replay:
 ```bash
 python3 ./tools/probes/lane_probe_snapshot.py \
   --host 127.0.0.1 \
-  --fixture-lane game_port_2 \
+  --fixture-lane game_port \
   --fixture-dir ./tools/fixtures/query \
   --summary
 ```
@@ -65,8 +64,7 @@ python3 ./tools/probes/lane_probe_snapshot.py \
 ```bash
 python3 ./tools/services/api/live_stats_api.py \
   --host 127.0.0.1 \
-  --game-port-1 15636 \
-  --game-port-2 15637 \
+  --game-port 15637 \
   --steam-query-port 27015 \
   --bind 127.0.0.1 \
   --port 8091
@@ -74,13 +72,18 @@ python3 ./tools/services/api/live_stats_api.py \
 
 Then open `http://127.0.0.1:8091/`.
 
+Add `--debug` if you want the landing page and `/v1/stats` to expose the redacted `startup_config` block.
+By default the API looks for `enshrouded_server.json` at `/home/steam/enshrouded/enshrouded_server.json`, then `$HOME/enshrouded/enshrouded_server.json`, then `$HOME/enshrouded-data/enshrouded/enshrouded_server.json`, then `./enshrouded_server.json`, unless `ENSHROUDED_API_SERVER_CONFIG_PATH` is set.
+That config file is always read for the default `server_config` metadata shown in the landing page and `/v1/stats`.
+If you do not set `--host`, the API will use `server.ip` from that config file when it is not `0.0.0.0`; otherwise it falls back to `127.0.0.1`.
+If you do not set `--game-port`, the API will use `server.queryPort` from that config file when present; otherwise it falls back to `15637`.
+
 ## 5) Expose Local CPU And Memory Stats
 
 ```bash
 python3 ./tools/services/api/live_stats_api.py \
   --host 127.0.0.1 \
-  --game-port-1 15636 \
-  --game-port-2 15637 \
+  --game-port 15637 \
   --steam-query-port 27015 \
   --bind 127.0.0.1 \
   --port 8091 \
@@ -93,13 +96,18 @@ Equivalent env:
 export ENSHROUDED_API_EXPOSE_LOCAL_STATS=1
 ```
 
+Debug mode equivalent env:
+
+```bash
+export ENSHROUDED_API_DEBUG=1
+```
+
 ## 6) Configure Webhook Events
 
 ```bash
 python3 ./tools/services/api/live_stats_api.py \
   --host 127.0.0.1 \
-  --game-port-1 15636 \
-  --game-port-2 15637 \
+  --game-port 15637 \
   --steam-query-port 27015 \
   --webhook-url https://example.invalid/hooks/enshrouded \
   --webhook-events up,down,player_add,player_remove,high_latency,high_memory,high_cpu \
@@ -141,8 +149,7 @@ export ENSHROUDED_API_DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 ```bash
 python3 ./tools/services/api/live_stats_api.py \
   --host 127.0.0.1 \
-  --game-port-1 15636 \
-  --game-port-2 15637 \
+  --game-port 15637 \
   --steam-query-port 27015 \
   --log-events \
   --webhook-events up,down,player_add,player_remove,high_latency,high_memory,high_cpu \
@@ -172,7 +179,7 @@ Example event payload:
   "live": {
     "status": "online",
     "source": "query",
-    "source_lane": "game_port_2",
+    "source_lane": "game_port",
     "players_current": 3,
     "players_max": 16,
     "players_confidence": "high",

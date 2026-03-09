@@ -14,7 +14,6 @@ services:
       SAVE_IMPORT_BIND: ${SAVE_IMPORT_BIND:-127.0.0.1}
       SAVE_IMPORT_TIMEOUT_SECONDS: ${SAVE_IMPORT_TIMEOUT_SECONDS:-0}
     ports:
-      - "15636:15636/udp"
       - "15637:15637/udp"
       - "27015:27015/udp"
       # Needed only when SAVE_IMPORT_MODE=1 (startup upload UI).
@@ -39,8 +38,7 @@ services:
       ENSHROUDED_API_TIMEOUT: "1.0"
       ENSHROUDED_API_RETRIES: "2"
       ENSHROUDED_API_CACHE_TTL: "3.0"
-      ENSHROUDED_API_GAME_PORT_1: "15636"
-      ENSHROUDED_API_GAME_PORT_2: "15637"
+      ENSHROUDED_API_GAME_PORT: "15637"
       ENSHROUDED_API_STEAM_QUERY_PORT: "27015"
       ENSHROUDED_API_SERVER_CONFIG_PATH: "/home/steam/enshrouded/enshrouded_server.json"
     ports:

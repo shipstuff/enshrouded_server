@@ -31,6 +31,34 @@ def main() -> int:
     assert module.redact_webhook_url("https://discord.com/api/webhooks/123/secret-token") == "https://discord.com/<redacted>"
     assert module.redact_webhook_url("not-a-url") == "<redacted>"
 
+    original_candidates = module.DEFAULT_SERVER_CONFIG_CANDIDATES
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cwd_candidate = Path(tmpdir) / "enshrouded_server.json"
+        cwd_candidate.write_text('{"name":"cwd-fixture"}', encoding="utf-8")
+        module.DEFAULT_SERVER_CONFIG_CANDIDATES = (
+            Path(tmpdir) / "missing.json",
+            cwd_candidate,
+        )
+        assert module.resolve_server_config_path() == cwd_candidate
+    module.DEFAULT_SERVER_CONFIG_CANDIDATES = original_candidates
+
+    os.environ["ENSHROUDED_API_SERVER_CONFIG_PATH"] = "/tmp/explicit-config.json"
+    assert module.resolve_server_config_path() == Path("/tmp/explicit-config.json")
+    os.environ.pop("ENSHROUDED_API_SERVER_CONFIG_PATH", None)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        server_config_path = Path(tmpdir) / "enshrouded_server.json"
+        server_config_path.write_text('{"ip":"192.168.1.44"}', encoding="utf-8")
+        assert module.resolve_probe_host(None, server_config_path) == "192.168.1.44"
+        server_config_path.write_text('{"ip":"0.0.0.0"}', encoding="utf-8")
+        assert module.resolve_probe_host(None, server_config_path) == "127.0.0.1"
+        assert module.resolve_probe_host("10.0.0.7", server_config_path) == "10.0.0.7"
+        server_config_path.write_text('{"queryPort":15639}', encoding="utf-8")
+        assert module.resolve_game_port(None, server_config_path) == 15639
+        server_config_path.write_text('{"queryPort":0}', encoding="utf-8")
+        assert module.resolve_game_port(None, server_config_path) == 15637
+        assert module.resolve_game_port(15640, server_config_path) == 15640
+
     try:
         module.parse_webhook_events("up,nope")
     except ValueError:
@@ -63,7 +91,7 @@ def main() -> int:
         "live": {
             "status": "online",
             "source": "query",
-            "source_lane": "game_port_2",
+            "source_lane": "game_port",
             "players_current": 1,
             "players_max": 16,
             "players_confidence": "high",
@@ -77,12 +105,14 @@ def main() -> int:
         host="127.0.0.1",
         timeout=1.0,
         retries=2,
-        lane_ports={"game_port_1": 32636, "game_port_2": 32637, "steam_query": 32015},
+        lane_ports={"game_port": 32637, "steam_query": 32015},
         local_stats=sampler.sample(),
+        server_config={"loaded": True, "name": "fixture", "query_port": 15637},
         startup_config={"server": {"loaded": True}, "stats_api": {"bind": "0.0.0.0"}},
     )
     assert payload["host"] == "127.0.0.1"
     assert "local_stats" in payload
+    assert payload["server_config"]["name"] == "fixture"
     assert payload["local_stats"]["scope"] == "api_host"
     assert payload["startup_config"]["server"]["loaded"] is True
 
@@ -90,10 +120,12 @@ def main() -> int:
         host="127.0.0.1",
         timeout=1.0,
         retries=2,
-        lane_ports={"game_port_1": 32636, "game_port_2": 32637, "steam_query": 32015},
+        lane_ports={"game_port": 32637, "steam_query": 32015},
         local_stats=None,
+        server_config={"loaded": False, "error": "missing"},
     )
     assert "local_stats" not in payload_hidden
+    assert payload_hidden["server_config"]["loaded"] is False
 
     with tempfile.TemporaryDirectory() as tmpdir:
         server_config_path = Path(tmpdir) / "enshrouded_server.json"
@@ -114,7 +146,7 @@ def main() -> int:
                 "timeout": 1.0,
                 "retries": 2,
                 "cache_ttl": 3.0,
-                "lane_ports": {"game_port_1": 32636, "game_port_2": 32637, "steam_query": 32015},
+                "lane_ports": {"game_port": 32637, "steam_query": 32015},
                 "expose_local_stats": False,
                 "log_events": False,
                 "server_config_path": str(server_config_path),
@@ -129,9 +161,13 @@ def main() -> int:
                 },
             }
         )
+        server_config_metadata = module.build_server_config_metadata(server_config_path)
     assert startup_cfg["server"]["loaded"] is True
     assert startup_cfg["server"]["config"]["userGroups"][0]["password"] == "<redacted>"
     assert startup_cfg["stats_api"]["webhook"]["discord_url"] == "https://discord.com/<redacted>"
+    assert server_config_metadata["loaded"] is True
+    assert server_config_metadata["name"] == "fixture"
+    assert server_config_metadata["user_group_count"] == 1
 
     cfg = {
         "events": {"up", "down", "player_add", "player_remove", "high_latency", "high_memory", "high_cpu"},

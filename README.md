@@ -68,7 +68,6 @@ docker compose up -d
 ```
 
 Default exposed ports:
-- UDP `15636`
 - UDP `15637`
 - UDP `27015`
 - TCP `8091` for the stats API
@@ -98,6 +97,10 @@ kubectl -n games set image statefulset/enshrouded \
   enshrouded=ghcr.io/your-org/enshrouded-server:latest \
   enshrouded-stats-api=ghcr.io/your-org/enshrouded-live-stats-api:latest
 ```
+
+The included StatefulSet also binds the game/query UDP ports directly on the node with `hostPort`:
+- `15637/udp`
+- `27015/udp`
 
 ## Install On Kubernetes With Helm
 
@@ -131,6 +134,7 @@ The chart also supports:
 - `imagePullSecrets`
 - disabling the sidecar API with `--set statsApi.enabled=false`
 - enabling the save-import UI service with `--set service.saveImport.enabled=true`
+- toggling direct node UDP bindings with `--set service.useHostPorts=true`
 
 Helm now supports two server-config ownership modes:
 - `serverConfig.mode=managed`: render `serverConfig.inlineJson` on every start and merge `userGroups` passwords from a Secret
@@ -230,14 +234,145 @@ For local usage outside Kubernetes:
 ```bash
 python3 ./tools/services/api/live_stats_api.py \
   --host 127.0.0.1 \
-  --game-port-1 15636 \
-  --game-port-2 15637 \
+  --game-port 15637 \
   --steam-query-port 27015 \
   --bind 127.0.0.1 \
   --port 8091
 ```
 
 More examples live in [`tools/USAGE.md`](/home/seslly/seslly-github/servertimeai/k8s/enshrouded_server/tools/USAGE.md).
+
+Landing page screenshot:
+
+![Enshrouded live stats landing page](tools/image.png)
+
+The API always tries to read `enshrouded_server.json` so it can show effective server metadata such as name, IP, query port, slots, and configured user-group count without extra manual API config.
+
+Debug mode is off by default. To expose the full redacted `startup_config` block in `/v1/stats` and in the landing page at `/`, start the API with `--debug` or `ENSHROUDED_API_DEBUG=1`.
+
+When the API needs to read `enshrouded_server.json` for debug metadata, it resolves the path in this order:
+- `ENSHROUDED_API_SERVER_CONFIG_PATH` if set
+- `/home/steam/enshrouded/enshrouded_server.json`
+- `$HOME/enshrouded/enshrouded_server.json`
+- `$HOME/enshrouded-data/enshrouded/enshrouded_server.json`
+- `./enshrouded_server.json` from the API process working directory
+
+Probe host resolution order:
+- `--host` or `ENSHROUDED_API_HOST` if set
+- `server.ip` from `enshrouded_server.json` when it is a real address
+- `127.0.0.1` when `server.ip` is `0.0.0.0`, empty, missing, or unreadable
+
+Game port resolution order:
+- `--game-port` or `ENSHROUDED_API_GAME_PORT` if set
+- `server.queryPort` from `enshrouded_server.json` when it is a valid integer
+- `15637` when `server.queryPort` is missing, invalid, or unreadable
+
+`/v1/stats` response shape:
+
+```json
+{
+  "ts": "2026-03-09T18:45:00Z",
+  "host": "Enshrouded Server",
+  "lane_ports": {
+    "game_port": 15637,
+    "steam_query": 27015
+  },
+  "live": {
+    "status": "online",
+    "source": "query",
+    "source_lane": "game_port",
+    "players_current": 3,
+    "players_max": 16,
+    "players_confidence": "high",
+    "server_name": "Enshrouded Server",
+    "server_version": "0.8.1.0",
+    "latency_ms": 148.2,
+    "a2s_player_count": 3,
+    "a2s_rule_count": 12
+  },
+  "lanes": [
+    {
+      "lane": "game_port",
+      "target": "127.0.0.1:15637",
+      "ok": true,
+      "status": "online",
+      "players_current": 3,
+      "players_max": 16,
+      "player_count": 3,
+      "rule_count": 12,
+      "latency_ms": 148.2,
+      "error": null
+    }
+  ],
+  "local_stats": {
+    "scope": "api_host",
+    "cpu_percent": 35.0,
+    "memory_percent": 42.0,
+    "memory_used_mb": 860.1,
+    "memory_total_mb": 2048.0,
+    "loadavg_1m": 0.22,
+    "loadavg_5m": 0.18,
+    "loadavg_15m": 0.15,
+    "error": null
+  },
+  "server_config": {
+    "config_path": "/home/steam/enshrouded/enshrouded_server.json",
+    "loaded": true,
+    "name": "Enshrouded Server",
+    "ip": "0.0.0.0",
+    "query_port": 15637,
+    "slot_count": 16,
+    "user_group_count": 1,
+    "error": null
+  },
+  "startup_config": {
+    "server": {
+      "config_path": "/home/steam/enshrouded/enshrouded_server.json",
+      "loaded": true,
+      "config": {},
+      "error": null
+    },
+    "stats_api": {
+      "bind": "0.0.0.0",
+      "port": 8091,
+      "host": "127.0.0.1",
+      "debug": true,
+      "timeout": 1.0,
+      "retries": 2,
+      "cache_ttl": 3.0,
+      "lane_ports": {
+        "game_port": 15637,
+        "steam_query": 27015
+      },
+      "expose_local_stats": false,
+      "log_events": false,
+      "webhook": {
+        "url": null,
+        "discord_url": null,
+        "timeout": 3.0,
+        "events": [
+          "down",
+          "high_cpu",
+          "high_latency",
+          "high_memory",
+          "player_add",
+          "player_remove",
+          "up"
+        ],
+        "high_latency_ms": null,
+        "high_memory_percent": null,
+        "high_cpu_percent": null
+      }
+    }
+  }
+}
+```
+
+Notes:
+- `local_stats` is omitted unless `--expose-local-stats` or `ENSHROUDED_API_EXPOSE_LOCAL_STATS=1` is enabled.
+- `server_config` is included whenever the API can resolve a config path, even when the file is missing or unreadable; in that case `loaded` is `false` and `error` is populated.
+- `startup_config` is omitted unless `--debug` or `ENSHROUDED_API_DEBUG=1` is enabled.
+- During warmup or probe errors, the API may also include a top-level `error` field and return placeholder values in `live`.
 
 ## Use The Optional Save Import UI
 

@@ -8,13 +8,12 @@ from typing import Dict, List, Optional
 from query_steam_a2s import A2S_QUERY_TYPES, decode_hex_file, query_a2s_bundle, summarize_bundle
 
 LANE_DEFAULTS = {
-    "game_port_1": 15636,
-    "game_port_2": 15637,
+    "game_port": 15637,
     "steam_query": 27015,
 }
 
-PRIMARY_ORDER = ["game_port_2", "game_port_1", "steam_query"]
-LANES = ["game_port_1", "game_port_2", "steam_query"]
+PRIMARY_ORDER = ["game_port", "steam_query"]
+LANES = ["game_port", "steam_query"]
 EMPTY_LANE = {
     "players_current": None,
     "players_max": None,
@@ -143,10 +142,9 @@ def main() -> int:
     parser.add_argument("--host", default="127.0.0.1", help="Target host")
     parser.add_argument("--timeout", type=float, default=1.0, help="UDP timeout seconds")
     parser.add_argument("--retries", type=int, default=2, help="Retries per lane")
-    parser.add_argument("--game-port-1", type=int, default=LANE_DEFAULTS["game_port_1"], help="UDP port for 15636 lane")
-    parser.add_argument("--game-port-2", type=int, default=LANE_DEFAULTS["game_port_2"], help="UDP port for 15637 lane")
+    parser.add_argument("--game-port", type=int, default=LANE_DEFAULTS["game_port"], help="UDP port for the Enshrouded game/query lane")
     parser.add_argument("--steam-query-port", type=int, default=LANE_DEFAULTS["steam_query"], help="UDP port for 27015 lane")
-    parser.add_argument("--fixture-lane", choices=["game_port_1", "game_port_2", "steam_query"], help="Use fixture decode for one lane")
+    parser.add_argument("--fixture-lane", choices=["game_port", "steam_query"], help="Use fixture decode for one lane")
     parser.add_argument("--fixture-dir", help="Fixture directory containing a2s-info/player/rules-response.hex (requires --fixture-lane)")
     parser.add_argument("--json-out", help="Optional output path")
     parser.add_argument("--summary", action="store_true", help="Print live+lane status summary")
@@ -156,8 +154,7 @@ def main() -> int:
         raise SystemExit("--fixture-lane and --fixture-dir must be used together")
 
     lane_ports = {
-        "game_port_1": args.game_port_1,
-        "game_port_2": args.game_port_2,
+        "game_port": args.game_port,
         "steam_query": args.steam_query_port,
     }
 

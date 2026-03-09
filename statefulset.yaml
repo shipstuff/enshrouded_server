@@ -37,13 +37,12 @@ spec:
             - name: SAVE_IMPORT_TIMEOUT_SECONDS
               value: "0"
           ports:
-            - containerPort: 15636
-              name: game-udp-1
-              protocol: UDP
             - containerPort: 15637
-              name: game-udp-2
+              hostPort: 15637
+              name: game-udp
               protocol: UDP
             - containerPort: 27015
+              hostPort: 27015
               name: query-udp
               protocol: UDP
           resources:
@@ -75,9 +74,7 @@ spec:
               value: "2"
             - name: ENSHROUDED_API_CACHE_TTL
               value: "3.0"
-            - name: ENSHROUDED_API_GAME_PORT_1
-              value: "15636"
-            - name: ENSHROUDED_API_GAME_PORT_2
+            - name: ENSHROUDED_API_GAME_PORT
               value: "15637"
             - name: ENSHROUDED_API_STEAM_QUERY_PORT
               value: "27015"

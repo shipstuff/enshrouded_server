@@ -11,7 +11,7 @@ trap 'rm -f "${OUT_JSON}"' EXIT
 
 python3 "${RUNNER}" \
   --host 127.0.0.1 \
-  --fixture-lane game_port_2 \
+  --fixture-lane game_port \
   --fixture-dir "${FIXTURE_DIR}" \
   --summary > "${OUT_JSON}"
 python3 "${ASSERT}" "${OUT_JSON}"

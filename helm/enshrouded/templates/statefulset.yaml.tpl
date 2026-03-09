@@ -64,14 +64,17 @@ spec:
             {{- fail (printf "unsupported serverConfig.mode %q (expected managed or mutable)" .Values.serverConfig.mode) }}
             {{- end }}
           ports:
-            - name: game-udp-1
-              containerPort: {{ .Values.service.gamePort1 }}
-              protocol: UDP
-            - name: game-udp-2
-              containerPort: {{ .Values.service.gamePort2 }}
+            - name: game-udp
+              containerPort: {{ .Values.service.gamePort }}
+              {{- if .Values.service.useHostPorts }}
+              hostPort: {{ .Values.service.gamePort }}
+              {{- end }}
               protocol: UDP
             - name: query-udp
               containerPort: {{ .Values.service.queryPort }}
+              {{- if .Values.service.useHostPorts }}
+              hostPort: {{ .Values.service.queryPort }}
+              {{- end }}
               protocol: UDP
             {{- if .Values.service.saveImport.enabled }}
             - name: import-ui
@@ -115,10 +118,8 @@ spec:
               value: {{ .Values.statsApi.cacheTtlSeconds | quote }}
             - name: ENSHROUDED_API_EXPOSE_LOCAL_STATS
               value: {{ ternary "1" "0" .Values.statsApi.exposeLocalStats | quote }}
-            - name: ENSHROUDED_API_GAME_PORT_1
-              value: {{ .Values.statsApi.lanePorts.gamePort1 | quote }}
-            - name: ENSHROUDED_API_GAME_PORT_2
-              value: {{ .Values.statsApi.lanePorts.gamePort2 | quote }}
+            - name: ENSHROUDED_API_GAME_PORT
+              value: {{ .Values.statsApi.lanePorts.gamePort | quote }}
             - name: ENSHROUDED_API_STEAM_QUERY_PORT
               value: {{ .Values.statsApi.lanePorts.steamQuery | quote }}
             - name: ENSHROUDED_API_SERVER_CONFIG_PATH

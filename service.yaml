@@ -8,25 +8,20 @@ spec:
   selector:
     app: enshrouded
   ports:
-    - name: game-udp-1
-      protocol: UDP
-      port: 15636
-      targetPort: 15636
-      nodePort: 32636
-    - name: game-udp-2
+    - name: game-udp
       protocol: UDP
       port: 15637
-      targetPort: 15637
+      targetPort: game-udp
       nodePort: 32637
     - name: steam-query
       protocol: UDP
       port: 27015
-      targetPort: 27015
+      targetPort: query-udp
       nodePort: 32015
     - name: stats-api
       protocol: TCP
       port: 8091
-      targetPort: 8091
+      targetPort: stats-api
       nodePort: 32091
     # Optional startup import UI exposure (only useful when SAVE_IMPORT_MODE=1).
     # - name: import-ui

@@ -5,7 +5,7 @@ Production-focused read-only tooling for Enshrouded live stats and query inspect
 ## Scope
 
 - Steam A2S query probe for `INFO`, `PLAYER`, and `RULES`
-- lane snapshot aggregation across `15636`, `15637`, and `27015`
+- lane snapshot aggregation across `15637` and `27015`
 - minimal local API/UI for `/v1/stats`, `/healthz`, and `/`
 - optional webhook and Discord delivery for status-change events
 - optional local CPU and memory sampling on the API host

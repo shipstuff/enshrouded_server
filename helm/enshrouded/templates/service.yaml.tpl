@@ -11,24 +11,17 @@ spec:
     app.kubernetes.io/name: {{ include "enshrouded.name" . }}
     app.kubernetes.io/instance: {{ .Release.Name }}
   ports:
-    - name: game-udp-1
+    - name: game-udp
       protocol: UDP
-      port: {{ .Values.service.gamePort1 }}
-      targetPort: {{ .Values.service.gamePort1 }}
+      port: {{ .Values.service.gamePort }}
+      targetPort: game-udp
       {{- if eq .Values.service.type "NodePort" }}
-      nodePort: {{ .Values.service.gameNodePort1 }}
-      {{- end }}
-    - name: game-udp-2
-      protocol: UDP
-      port: {{ .Values.service.gamePort2 }}
-      targetPort: {{ .Values.service.gamePort2 }}
-      {{- if eq .Values.service.type "NodePort" }}
-      nodePort: {{ .Values.service.gameNodePort2 }}
+      nodePort: {{ .Values.service.gameNodePort }}
       {{- end }}
     - name: steam-query
       protocol: UDP
       port: {{ .Values.service.queryPort }}
-      targetPort: {{ .Values.service.queryPort }}
+      targetPort: query-udp
       {{- if eq .Values.service.type "NodePort" }}
       nodePort: {{ .Values.service.queryNodePort }}
       {{- end }}
@@ -36,7 +29,7 @@ spec:
     - name: stats-api
       protocol: TCP
       port: {{ .Values.service.statsApi.port }}
-      targetPort: {{ .Values.statsApi.port }}
+      targetPort: stats-api
       {{- if eq .Values.service.type "NodePort" }}
       nodePort: {{ .Values.service.statsApi.nodePort }}
       {{- end }}
@@ -45,7 +38,7 @@ spec:
     - name: import-ui
       protocol: TCP
       port: {{ .Values.service.saveImport.port }}
-      targetPort: {{ .Values.service.saveImport.port }}
+      targetPort: import-ui
       {{- if eq .Values.service.type "NodePort" }}
       nodePort: {{ .Values.service.saveImport.nodePort }}
       {{- end }}

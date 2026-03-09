@@ -26,8 +26,7 @@ statsApi:
   cacheTtlSeconds: 3.0
   exposeLocalStats: false
   lanePorts:
-    gamePort1: 15636
-    gamePort2: 15637
+    gamePort: 15637
     steamQuery: 27015
   resources:
     requests:
@@ -53,12 +52,15 @@ persistence:
 
 service:
   type: NodePort
-  gamePort1: 15636
-  gameNodePort1: 32636
-  gamePort2: 15637
-  gameNodePort2: 32637
-  queryPort: 27015
-  queryNodePort: 32015
+  # Enable this when the game server should bind the node's real UDP ports directly.
+  # This is useful when clients or server browsers should hit the node on the same
+  # well-known ports the server is actually listening on, instead of relying only
+  # on a Kubernetes Service hop.
+  useHostPorts: true
+  gamePort: 15637      # Direct container port
+  gameNodePort: 32637  # Node port
+  queryPort: 27015     # Direct container port
+  queryNodePort: 32015 # Node port
   statsApi:
     enabled: true
     port: 8091

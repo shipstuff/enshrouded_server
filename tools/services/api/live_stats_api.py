@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import signal
 import sys
 import threading
 import time
@@ -18,7 +19,12 @@ PROBES_DIR = TOOLS_ROOT / "probes"
 STATIC_DIR = HERE.parent / "static"
 INDEX_HTML_PATH = STATIC_DIR / "index.html"
 USER_AGENT = "live-stats-api/1.0"
-DEFAULT_SERVER_CONFIG_PATH = Path(os.getenv("ENSHROUDED_API_SERVER_CONFIG_PATH", "/home/steam/enshrouded/enshrouded_server.json"))
+DEFAULT_SERVER_CONFIG_CANDIDATES = (
+    Path("/home/steam/enshrouded/enshrouded_server.json"),
+    Path.home() / "enshrouded" / "enshrouded_server.json",
+    Path.home() / "enshrouded-data" / "enshrouded" / "enshrouded_server.json",
+    Path.cwd() / "enshrouded_server.json",
+)
 DEFAULT_WEBHOOK_EVENTS = {
     "up",
     "down",
@@ -73,9 +79,53 @@ def redact_mapping(value: Any) -> Any:
     return value
 
 
+def resolve_server_config_path() -> Path:
+    override = env_text("ENSHROUDED_API_SERVER_CONFIG_PATH")
+    if override is not None:
+        return Path(override)
+    for candidate in DEFAULT_SERVER_CONFIG_CANDIDATES:
+        if candidate.exists():
+            return candidate
+    return DEFAULT_SERVER_CONFIG_CANDIDATES[0]
+
+
+def resolve_probe_host(explicit_host: Optional[str], server_config_path: Path) -> str:
+    if explicit_host is not None and explicit_host.strip():
+        return explicit_host.strip()
+    try:
+        config = json.loads(server_config_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return "127.0.0.1"
+    except (OSError, json.JSONDecodeError):
+        return "127.0.0.1"
+
+    configured_ip = config.get("ip")
+    if isinstance(configured_ip, str):
+        candidate = configured_ip.strip()
+        if candidate not in {"", "0.0.0.0", "::"}:
+            return candidate
+    return "127.0.0.1"
+
+
+def resolve_game_port(explicit_port: Optional[int], server_config_path: Path) -> int:
+    if explicit_port is not None:
+        return explicit_port
+    try:
+        config = json.loads(server_config_path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return int(LANE_DEFAULTS["game_port"])
+    except (OSError, json.JSONDecodeError):
+        return int(LANE_DEFAULTS["game_port"])
+
+    configured_port = config.get("queryPort")
+    if isinstance(configured_port, int) and configured_port > 0:
+        return configured_port
+    return int(LANE_DEFAULTS["game_port"])
+
+
 def build_startup_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
     webhook_cfg = cfg.get("webhook", {})
-    server_config_path = Path(cfg.get("server_config_path", DEFAULT_SERVER_CONFIG_PATH))
+    server_config_path = Path(cfg.get("server_config_path", resolve_server_config_path()))
     server = {
         "config_path": str(server_config_path),
         "loaded": False,
@@ -94,6 +144,7 @@ def build_startup_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
         "bind": cfg["bind"],
         "port": cfg["port"],
         "host": cfg["host"],
+        "debug": cfg.get("debug", False),
         "timeout": cfg["timeout"],
         "retries": cfg["retries"],
         "cache_ttl": cfg["cache_ttl"],
@@ -115,6 +166,34 @@ def build_startup_config(cfg: Dict[str, Any]) -> Dict[str, Any]:
         "server": server,
         "stats_api": redact_mapping(stats_api),
     }
+
+
+def build_server_config_metadata(server_config_path: Path) -> Dict[str, Any]:
+    metadata = {
+        "config_path": str(server_config_path),
+        "loaded": False,
+        "name": None,
+        "ip": None,
+        "query_port": None,
+        "slot_count": None,
+        "user_group_count": None,
+        "error": None,
+    }
+    try:
+        config = json.loads(server_config_path.read_text(encoding="utf-8"))
+        metadata["loaded"] = True
+        metadata["name"] = config.get("name")
+        metadata["ip"] = config.get("ip")
+        metadata["query_port"] = config.get("queryPort")
+        metadata["slot_count"] = config.get("slotCount")
+        user_groups = config.get("userGroups")
+        if isinstance(user_groups, list):
+            metadata["user_group_count"] = len(user_groups)
+    except FileNotFoundError:
+        metadata["error"] = f"config not found at {server_config_path}"
+    except (OSError, json.JSONDecodeError) as exc:
+        metadata["error"] = str(exc)
+    return metadata
 
 
 def format_metric_value(value: Any, suffix: str = "") -> str:
@@ -435,6 +514,7 @@ def build_stats_response(
     retries: int,
     lane_ports: Dict[str, int],
     local_stats: Optional[Dict] = None,
+    server_config: Optional[Dict[str, Any]] = None,
     startup_config: Optional[Dict[str, Any]] = None,
 ) -> Dict:
     snap = build_snapshot(host=host, timeout=timeout, retries=retries, lane_ports=lane_ports)
@@ -447,6 +527,8 @@ def build_stats_response(
     }
     if local_stats is not None:
         payload["local_stats"] = local_stats
+    if server_config is not None:
+        payload["server_config"] = server_config
     if startup_config is not None:
         payload["startup_config"] = startup_config
     return payload
@@ -601,6 +683,7 @@ def build_pending_payload(
     lane_ports: Dict[str, int],
     include_local_stats: bool,
     error: Optional[str],
+    server_config: Optional[Dict[str, Any]] = None,
     startup_config: Optional[Dict[str, Any]] = None,
 ) -> Dict:
     payload = {
@@ -633,6 +716,8 @@ def build_pending_payload(
             "loadavg_15m": None,
             "error": "local stats warming",
         }
+    if server_config is not None:
+        payload["server_config"] = server_config
     if startup_config is not None:
         payload["startup_config"] = startup_config
     return payload
@@ -648,6 +733,8 @@ class Handler(BaseHTTPRequestHandler):
     cache_error = None
     webhook_state = {}
     local_stats_sampler = LocalStatsSampler()
+    stop_event = threading.Event()
+    server_config_metadata = None
     startup_config = None
 
     def _send_json(self, status: int, payload: Dict) -> None:
@@ -769,6 +856,7 @@ class Handler(BaseHTTPRequestHandler):
             retries=cfg["retries"],
             lane_ports=cfg["lane_ports"],
             local_stats=local_stats if cfg.get("expose_local_stats", False) else None,
+            server_config=cls.server_config_metadata,
             startup_config=cls.startup_config,
         )
         with cls.cache_lock:
@@ -787,13 +875,13 @@ class Handler(BaseHTTPRequestHandler):
     @classmethod
     def refresh_loop(cls) -> None:
         interval = max(float(cls.config.get("cache_ttl", 3.0)), 0.25)
-        while True:
+        while not cls.stop_event.is_set():
             try:
                 cls.refresh_cache()
             except Exception as exc:
                 with cls.cache_lock:
                     cls.cache_error = str(exc)
-            time.sleep(interval)
+            cls.stop_event.wait(interval)
 
     def _get_cached_stats(self) -> Dict:
         cls = type(self)
@@ -807,6 +895,7 @@ class Handler(BaseHTTPRequestHandler):
             lane_ports=self.config["lane_ports"],
             include_local_stats=self.config.get("expose_local_stats", False),
             error=error,
+            server_config=self.server_config_metadata,
             startup_config=self.startup_config,
         )
 
@@ -840,13 +929,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Minimal Enshrouded stats API with optional webhooks.")
     parser.add_argument("--bind", default=os.getenv("ENSHROUDED_API_BIND", "127.0.0.1"), help="Bind address")
     parser.add_argument("--port", type=int, default=int(os.getenv("ENSHROUDED_API_PORT", "8091")), help="HTTP listen port")
-    parser.add_argument("--host", default=os.getenv("ENSHROUDED_API_HOST", "127.0.0.1"), help="Target node host for query probes")
+    parser.add_argument("--host", default=env_text("ENSHROUDED_API_HOST"), help="Target node host for query probes; defaults to server_config.ip when set and not 0.0.0.0, otherwise 127.0.0.1")
     parser.add_argument("--timeout", type=float, default=float(os.getenv("ENSHROUDED_API_TIMEOUT", "1.0")), help="UDP timeout")
     parser.add_argument("--retries", type=int, default=int(os.getenv("ENSHROUDED_API_RETRIES", "2")), help="UDP retries")
     parser.add_argument("--cache-ttl", type=float, default=float(os.getenv("ENSHROUDED_API_CACHE_TTL", "3.0")), help="Stats cache TTL seconds")
-    parser.add_argument("--game-port-1", type=int, default=int(os.getenv("ENSHROUDED_API_GAME_PORT_1", str(LANE_DEFAULTS["game_port_1"]))))
-    parser.add_argument("--game-port-2", type=int, default=int(os.getenv("ENSHROUDED_API_GAME_PORT_2", str(LANE_DEFAULTS["game_port_2"]))))
+    parser.add_argument("--game-port", type=int, default=(int(env_text("ENSHROUDED_API_GAME_PORT")) if env_text("ENSHROUDED_API_GAME_PORT") is not None else None))
     parser.add_argument("--steam-query-port", type=int, default=int(os.getenv("ENSHROUDED_API_STEAM_QUERY_PORT", str(LANE_DEFAULTS["steam_query"]))))
+    parser.add_argument("--debug", action=argparse.BooleanOptionalAction, default=env_flag("ENSHROUDED_API_DEBUG", False), help="Expose debug-only fields such as startup_config in /v1/stats and the landing page")
     parser.add_argument("--expose-local-stats", action=argparse.BooleanOptionalAction, default=env_flag("ENSHROUDED_API_EXPOSE_LOCAL_STATS", False), help="Expose local API-host CPU/memory stats in /v1/stats and the UI")
     parser.add_argument("--webhook-url", default=os.getenv("ENSHROUDED_API_WEBHOOK_URL"), help="Optional webhook URL for event posts")
     parser.add_argument("--discord-webhook-url", default=os.getenv("ENSHROUDED_API_DISCORD_WEBHOOK_URL"), help="Optional Discord incoming webhook URL for direct event delivery")
@@ -864,20 +953,23 @@ def main() -> int:
     webhook_high_latency_ms = resolve_optional_float(parser, args.webhook_high_latency_ms, "ENSHROUDED_API_WEBHOOK_HIGH_LATENCY_MS")
     webhook_high_memory_percent = resolve_optional_float(parser, args.webhook_high_memory_percent, "ENSHROUDED_API_WEBHOOK_HIGH_MEMORY_PERCENT")
     webhook_high_cpu_percent = resolve_optional_float(parser, args.webhook_high_cpu_percent, "ENSHROUDED_API_WEBHOOK_HIGH_CPU_PERCENT")
+    resolved_server_config_path = resolve_server_config_path()
+    resolved_probe_host = resolve_probe_host(args.host, resolved_server_config_path)
+    resolved_game_port = resolve_game_port(args.game_port, resolved_server_config_path)
 
     Handler.config = {
         "bind": args.bind,
         "port": args.port,
-        "host": args.host,
+        "host": resolved_probe_host,
+        "debug": args.debug,
         "timeout": args.timeout,
         "retries": args.retries,
         "cache_ttl": args.cache_ttl,
         "expose_local_stats": args.expose_local_stats,
         "log_events": args.log_events,
-        "server_config_path": str(DEFAULT_SERVER_CONFIG_PATH),
+        "server_config_path": str(resolved_server_config_path),
         "lane_ports": {
-            "game_port_1": args.game_port_1,
-            "game_port_2": args.game_port_2,
+            "game_port": resolved_game_port,
             "steam_query": args.steam_query_port,
         },
         "webhook": {
@@ -894,19 +986,43 @@ def main() -> int:
     Handler.cached_payload = None
     Handler.cached_at = 0.0
     Handler.cache_error = None
-    Handler.startup_config = build_startup_config(Handler.config)
-    log_stderr("startup config", startup_config=Handler.startup_config)
+    Handler.stop_event = threading.Event()
+    Handler.server_config_metadata = build_server_config_metadata(Path(Handler.config["server_config_path"]))
+    Handler.startup_config = build_startup_config(Handler.config) if args.debug else None
+    log_stderr("server config metadata", server_config=Handler.server_config_metadata)
+    if Handler.startup_config is not None:
+        log_stderr("startup config", startup_config=Handler.startup_config)
 
     try:
         Handler.refresh_cache()
     except Exception as exc:
         with Handler.cache_lock:
             Handler.cache_error = str(exc)
-    threading.Thread(target=Handler.refresh_loop, daemon=True).start()
-
     server = ThreadingHTTPServer((args.bind, args.port), Handler)
+    refresh_thread = threading.Thread(target=Handler.refresh_loop, daemon=True)
+    refresh_thread.start()
+
+    shutdown_once = threading.Event()
+
+    def _shutdown(signum: int, _frame) -> None:
+        if shutdown_once.is_set():
+            return
+        shutdown_once.set()
+        Handler.stop_event.set()
+        signame = signal.Signals(signum).name
+        log_stderr("shutdown requested", signal=signame)
+        threading.Thread(target=server.shutdown, daemon=True).start()
+
+    signal.signal(signal.SIGINT, _shutdown)
+    signal.signal(signal.SIGTERM, _shutdown)
     log_stderr(f"listening on http://{args.bind}:{args.port}")
-    server.serve_forever()
+    try:
+        server.serve_forever()
+    finally:
+        Handler.stop_event.set()
+        server.server_close()
+        refresh_thread.join(timeout=5.0)
+        log_stderr("server stopped")
     return 0
 
 
